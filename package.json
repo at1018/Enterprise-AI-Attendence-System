@@ -1,0 +1,20 @@
+{
+  "name": "enterprise-ai-attendence-system",
+  "version": "1.0.0",
+  "description": "This repository is the foundation for the AI School Classroom Attendance Platform. The project follows the approved Phase 0 foundation requirements and is intended to evolve through the later phases of the platform roadmap.",
+  "main": "index.js",
+  "scripts": {
+    "backend:dev": "cd backend && npm run start:dev",
+    "backend:build": "cd backend && npm run build",
+    "frontend:dev": "cd frontend && npm run dev",
+    "frontend:build": "cd frontend && npm run build",
+    "dev": "concurrently \"npm run backend:dev\" \"npm run frontend:dev\"",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

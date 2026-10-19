@@ -1,0 +1,865 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Platform Schema - Multi-Tenant Foundation
+// These models live in the platform schema and manage tenant isolation
+
+model Tenant {
+  id                String   @id @default(cuid())
+  name              String
+  slug              String   @unique
+  schemaName        String   @unique // The PostgreSQL schema name for this tenant
+  status            TenantStatus @default(ACTIVE)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Tenant configuration
+  configuration     TenantConfiguration?
+  // Users associated with this tenant
+  users             User[]
+  
+  @@map("tenants")
+}
+
+model TenantConfiguration {
+  id                String   @id @default(cuid())
+  tenantId          String   @unique
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Configuration settings
+  maxUsers          Int      @default(100)
+  maxStudents       Int      @default(1000)
+  maxTeachers       Int      @default(100)
+  features          String[] // Array of enabled features
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@map("tenant_configurations")
+}
+
+// User and Authentication Models
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  passwordHash      String
+  firstName         String
+  lastName          String
+  role              UserRole
+  tenantId          String
+  tenant            Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  refreshTokens     RefreshToken[]
+  
+  isActive          Boolean  @default(true)
+  emailVerified     Boolean  @default(false)
+  lastLoginAt       DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([email])
+  @@index([tenantId])
+  @@map("users")
+}
+
+// Refresh tokens for JWT authentication
+model RefreshToken {
+  id                String   @id @default(cuid())
+  token             String   @unique
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt         DateTime
+  createdAt         DateTime @default(now())
+  revokedAt         DateTime?
+  
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// Academic Management Models (Phase 3)
+// These models will live in tenant-specific schemas in production
+// For now, they live in the platform schema with tenant isolation
+
+model AcademicYear {
+  id                String   @id @default(cuid())
+  name              String
+  startDate         DateTime
+  endDate           DateTime
+  isActive          Boolean  @default(true)
+  tenantId          String
+  
+  classes           Class[]
+  students          Student[]
+  teachers          Teacher[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@map("academic_years")
+}
+
+model Class {
+  id                String   @id @default(cuid())
+  name              String
+  grade             Int
+  academicYearId     String
+  academicYear      AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  tenantId          String
+  
+  sections          Section[]
+  studentEnrollments StudentEnrollment[]
+  classTeacherAssignments ClassTeacherAssignment[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([academicYearId])
+  @@map("classes")
+}
+
+model Section {
+  id                String   @id @default(cuid())
+  name              String
+  classId           String
+  class             Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  tenantId          String
+  
+  studentEnrollments StudentEnrollment[]
+  classTeacherAssignments ClassTeacherAssignment[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([classId])
+  @@map("sections")
+}
+
+model Student {
+  id                String   @id @default(cuid())
+  studentId         String   @unique // School-provided student ID
+  firstName         String
+  lastName          String
+  email             String?
+  dateOfBirth       DateTime?
+  gender            String?
+  address           String?
+  phone             String?
+  parentName        String?
+  parentPhone       String?
+  isActive          Boolean  @default(true)
+  academicYearId    String
+  academicYear      AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  tenantId          String
+  
+  enrollments       StudentEnrollment[]
+  attendanceSummaries StudentAttendanceSummary[]
+  faceEnrollments   FaceEnrollment[]
+  biometricConsents BiometricConsent[]
+  preliminaryAttendances PreliminaryAttendance[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([academicYearId])
+  @@index([studentId])
+  @@map("students")
+}
+
+model Teacher {
+  id                String   @id @default(cuid())
+  teacherId         String   @unique // School-provided teacher ID
+  firstName         String
+  lastName          String
+  email             String?
+  phone             String?
+  qualification     String?
+  specialization    String?
+  isActive          Boolean  @default(true)
+  academicYearId    String
+  academicYear      AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  tenantId          String
+  
+  classTeacherAssignments ClassTeacherAssignment[]
+  subjectTeacherAssignments SubjectTeacherAssignment[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([academicYearId])
+  @@index([teacherId])
+  @@map("teachers")
+}
+
+model Subject {
+  id                String   @id @default(cuid())
+  name              String
+  code              String
+  description       String?
+  isActive          Boolean  @default(true)
+  tenantId          String
+  
+  subjectTeacherAssignments SubjectTeacherAssignment[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([code])
+  @@map("subjects")
+}
+
+model StudentEnrollment {
+  id                String   @id @default(cuid())
+  studentId         String
+  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classId           String
+  class             Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId         String?
+  section           Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  enrollmentDate    DateTime @default(now())
+  isActive          Boolean  @default(true)
+  tenantId          String
+  
+  @@unique([studentId, classId, sectionId])
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([classId])
+  @@map("student_enrollments")
+}
+
+model ClassTeacherAssignment {
+  id                String   @id @default(cuid())
+  teacherId         String
+  teacher           Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  classId           String
+  class             Class    @relation(fields: [classId], references: [id], onDelete: Cascade)
+  sectionId         String?
+  section           Section? @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  academicYear      String?
+  isActive          Boolean  @default(true)
+  tenantId          String
+  
+  @@index([tenantId])
+  @@index([teacherId])
+  @@index([classId])
+  @@map("class_teacher_assignments")
+}
+
+model SubjectTeacherAssignment {
+  id                String   @id @default(cuid())
+  teacherId         String
+  teacher           Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subjectId         String
+  subject           Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  classId           String?
+  sectionId         String?
+  isActive          Boolean  @default(true)
+  tenantId          String
+  
+  @@index([tenantId])
+  @@index([teacherId])
+  @@index([subjectId])
+  @@map("subject_teacher_assignments")
+}
+
+// Phase 4: Classroom / Camera / Timetable Models
+// These models support the physical infrastructure and scheduling for attendance
+
+model Classroom {
+  id                String   @id @default(cuid())
+  name              String
+  building          String?
+  floor             String?
+  capacity          Int?
+  description       String?
+  isActive          Boolean  @default(true)
+  tenantId          String
+  
+  cameras           Camera[]
+  timetableEntries  TimetableEntry[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@map("classrooms")
+}
+
+model Camera {
+  id                String   @id @default(cuid())
+  name              String
+  cameraId          String   @unique // Physical camera identifier
+  ipAddress         String?
+  port              Int?
+  username          String?
+  password          String? // Encrypted in production
+  rtspUrl           String? // RTSP stream URL
+  resolution        String?
+  fps               Int?
+  isActive          Boolean  @default(true)
+  classroomId       String?
+  classroom         Classroom? @relation(fields: [classroomId], references: [id], onDelete: SetNull)
+  tenantId          String
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([classroomId])
+  @@index([cameraId])
+  @@map("cameras")
+}
+
+model TimetableEntry {
+  id                String   @id @default(cuid())
+  dayOfWeek         Int // 0 = Sunday, 1 = Monday, etc.
+  period            Int
+  startTime         String // Format: "HH:MM"
+  endTime           String // Format: "HH:MM"
+  classId           String
+  sectionId         String?
+  subjectId         String
+  teacherId         String
+  classroomId       String
+  academicYearId    String
+  isActive          Boolean  @default(true)
+  tenantId          String
+  
+  classroom         Classroom @relation(fields: [classroomId], references: [id], onDelete: Cascade)
+  
+  @@unique([dayOfWeek, period, classId, sectionId, academicYearId])
+  @@index([tenantId])
+  @@index([classId])
+  @@index([teacherId])
+  @@index([academicYearId])
+  @@index([dayOfWeek])
+  @@map("timetable_entries")
+}
+
+// Phase 5: Attendance System Models
+// These models support period-wise attendance tracking with evidence collection
+
+model AttendanceSession {
+  id                String   @id @default(cuid())
+  sessionId         String   @unique // Unique session identifier
+  date              DateTime
+  dayOfWeek         Int
+  period            Int
+  classId           String
+  sectionId         String?
+  subjectId         String
+  teacherId         String
+  classroomId       String
+  academicYearId    String
+  timetableEntryId  String?
+  cameraId          String?
+  startTime         DateTime?
+  endTime           DateTime?
+  status            AttendanceSessionStatus @default(IN_PROGRESS)
+  totalStudents     Int      @default(0)
+  presentCount      Int      @default(0)
+  absentCount       Int      @default(0)
+  lateCount         Int      @default(0)
+  excusedCount      Int      @default(0)
+  isCompleted       Boolean  @default(false)
+  completedAt       DateTime?
+  completedBy       String?  // User ID who completed the session
+  tenantId          String
+  
+  attendanceRecords AttendanceRecord[]
+  checkpoints       AttendanceCheckpoint[]
+  preliminaryAttendances PreliminaryAttendance[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([classId])
+  @@index([teacherId])
+  @@index([date])
+  @@index([sessionId])
+  @@map("attendance_sessions")
+}
+
+model AttendanceRecord {
+  id                String   @id @default(cuid())
+  sessionId         String
+  session           AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  studentId         String
+  status            AttendanceStatus @default(PRESENT)
+  checkInTime       DateTime?
+  checkOutTime      DateTime?
+  markedBy          String?  // User ID who marked attendance
+  overriddenBy      String?  // User ID who overrode attendance
+  overrideReason    String?
+  isManual          Boolean  @default(false)
+  evidenceCount     Int      @default(0)
+  tenantId          String
+  
+  evidences         AttendanceEvidence[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@unique([sessionId, studentId])
+  @@index([tenantId])
+  @@index([sessionId])
+  @@index([studentId])
+  @@index([status])
+  @@map("attendance_records")
+}
+
+model AttendanceEvidence {
+  id                String   @id @default(cuid())
+  recordId          String
+  record            AttendanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  checkpoint        Int      // 1, 2, or 3 (first, second, third checkpoint)
+  imageUrl          String?
+  faceData          String?  // Encoded face recognition data
+  confidence        Float?   // Face recognition confidence score
+  timestamp         DateTime @default(now())
+  cameraId          String?
+  isMatched         Boolean  @default(false)
+  matchedStudentId  String?
+  tenantId          String
+  
+  createdAt         DateTime @default(now())
+  
+  @@index([tenantId])
+  @@index([recordId])
+  @@index([checkpoint])
+  @@map("attendance_evidences")
+}
+
+// Health check for platform monitoring
+model HealthCheck {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  
+  @@map("health_checks")
+}
+
+// Enum for tenant status
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+  DELETED
+}
+
+// Enum for user roles
+enum UserRole {
+  SCHOOL_ADMIN
+  SUBJECT_TEACHER
+  CLASS_TEACHER
+  PRINCIPAL
+}
+
+// Enum for attendance status
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+// Enum for attendance session status
+enum AttendanceSessionStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// Enum for report type
+enum ReportType {
+  STUDENT_ATTENDANCE
+  CLASS_ATTENDANCE
+  TEACHER_ATTENDANCE
+  DAILY_SUMMARY
+  MONTHLY_SUMMARY
+  CUSTOM
+}
+
+// Enum for report status
+enum ReportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+// Phase 6: Reports & Analytics Models
+// These models support attendance reporting and analytics
+
+model AttendanceReport {
+  id                String   @id @default(cuid())
+  reportId          String   @unique
+  reportType        ReportType
+  title             String
+  description       String?
+  generatedBy       String   // User ID who generated the report
+  startDate         DateTime
+  endDate           DateTime
+  filters           Json?    // Flexible filter criteria
+  parameters        Json?    // Report parameters
+  fileUrl           String?  // URL to generated report file
+  fileSize          Int?
+  status            ReportStatus @default(COMPLETED)
+  errorMessage      String?
+  tenantId          String
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([reportId])
+  @@index([reportType])
+  @@index([generatedBy])
+  @@map("attendance_reports")
+}
+
+model StudentAttendanceSummary {
+  id                String   @id @default(cuid())
+  studentId         String
+  academicYearId    String
+  classId           String?
+  sectionId         String?
+  totalSessions     Int      @default(0)
+  presentCount      Int      @default(0)
+  absentCount       Int      @default(0)
+  lateCount         Int      @default(0)
+  excusedCount      Int      @default(0)
+  attendancePercentage Float   @default(0)
+  tenantId          String
+  
+  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  @@unique([studentId, academicYearId, classId, sectionId])
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([academicYearId])
+  @@index([classId])
+  @@map("student_attendance_summaries")
+}
+
+model ClassAttendanceAnalytics {
+  id                String   @id @default(cuid())
+  classId           String
+  sectionId         String?
+  academicYearId    String
+  subjectId         String?
+  teacherId         String?
+  date              DateTime
+  totalStudents     Int      @default(0)
+  presentCount      Int      @default(0)
+  absentCount       Int      @default(0)
+  lateCount         Int      @default(0)
+  excusedCount      Int      @default(0)
+  attendancePercentage Float   @default(0)
+  tenantId          String
+  
+  @@unique([classId, sectionId, subjectId, teacherId, date])
+  @@index([tenantId])
+  @@index([classId])
+  @@index([academicYearId])
+  @@index([date])
+  @@map("class_attendance_analytics")
+}
+
+// Phase 6: Edge Agent Foundation Models
+// These models support Edge Agent communication and device management
+
+model EdgeDevice {
+  id                String   @id @default(cuid())
+  deviceId          String   @unique
+  deviceName        String
+  tenantId          String
+  status            EdgeDeviceStatus @default(OFFLINE)
+  lastSeen          DateTime?
+  authCredential    String?
+  metadata          Json?
+  
+  events            EdgeEvent[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([deviceId])
+  @@index([status])
+  @@map("edge_devices")
+}
+
+model EdgeEvent {
+  id                String   @id @default(cuid())
+  eventId           String   @unique
+  eventType         String
+  deviceId          String
+  tenantId          String
+  timestamp         DateTime
+  data              Json
+  synced            Boolean  @default(false)
+  retryCount        Int      @default(0)
+  
+  device            EdgeDevice @relation(fields: [deviceId], references: [deviceId], onDelete: Cascade)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@index([tenantId])
+  @@index([deviceId])
+  @@index([eventId])
+  @@index([synced])
+  @@index([timestamp])
+  @@map("edge_events")
+}
+
+enum EdgeDeviceStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+  DISABLED
+}
+
+enum CheckpointType {
+  START
+  MIDDLE
+  END
+}
+
+enum CheckpointStatus {
+  PENDING
+  COMPLETED
+  SKIPPED
+  FAILED
+}
+
+enum PreliminaryAttendanceStatus {
+  AI_VERIFIED_PRESENT
+  ATTENDANCE_EXCEPTION
+  NEEDS_REVIEW
+  INSUFFICIENT_EVIDENCE
+}
+
+// Phase 7: Face Enrollment & Recognition Models
+// These models support biometric data management with privacy controls
+
+model FaceEnrollment {
+  id                String   @id @default(cuid())
+  studentId         String
+  tenantId          String
+  faceEmbedding     String   // Encrypted 128D face embedding vector
+  faceThumbnail     String?  // Encrypted thumbnail image (optional)
+  enrollmentDate    DateTime @default(now())
+  retentionUntil    DateTime // When biometric data should be auto-deleted
+  qualityScore      Float    // Face quality score (0-1)
+  deviceId          String?  // Edge device used for enrollment
+  isActive          Boolean  @default(true)
+  metadata          Json?
+  
+  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  recognitionResults FaceRecognitionResult[]
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@unique([studentId, tenantId])
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([isActive])
+  @@index([retentionUntil])
+  @@map("face_enrollments")
+}
+
+model BiometricConsent {
+  id                String   @id @default(cuid())
+  studentId         String
+  tenantId          String
+  consentGiven      Boolean
+  consentDate       DateTime @default(now())
+  consentedBy       String   // User ID who gave consent
+  consentMethod     String   // How consent was obtained (form, digital, etc.)
+  withdrawnAt       DateTime?
+  withdrawnBy       String?
+  notes             String?
+  
+  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  
+  @@unique([studentId, tenantId])
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([consentGiven])
+  @@map("biometric_consents")
+}
+
+model FaceRecognitionResult {
+  id                String   @id @default(cuid())
+  enrollmentId      String
+  tenantId          String
+  sessionId         String?  // Attendance session ID
+  deviceId          String
+  confidence        Float    // Recognition confidence score (0-1)
+  recognizedAt      DateTime @default(now())
+  faceQuality       Float    // Quality of detected face (0-1)
+  thumbnail         String?  // Encrypted thumbnail of detected face
+  metadata          Json?
+  
+  enrollment        FaceEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([enrollmentId])
+  @@index([sessionId])
+  @@index([deviceId])
+  @@index([recognizedAt])
+  @@map("face_recognition_results")
+}
+
+model BiometricDeletionAudit {
+  id                String   @id @default(cuid())
+  studentId         String
+  tenantId          String
+  enrollmentId      String
+  deletedBy         String   // User ID who performed deletion
+  deletedAt         DateTime @default(now())
+  deletionReason    String
+  authorizationLevel String  // Role that authorized deletion
+  ipAddress         String?
+  deviceId          String?
+  verified          Boolean  @default(false)
+  gracePeriodEnds   DateTime?
+  permanentlyDeleted DateTime?
+  
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([deletedAt])
+  @@map("biometric_deletion_audits")
+}
+
+// Phase 8: Three-Checkpoint Automated Attendance Models
+// These models support three-checkpoint attendance calculation
+
+model AttendanceCheckpoint {
+  id                String   @id @default(cuid())
+  sessionId         String
+  checkpointType     CheckpointType
+  scheduledTime     DateTime
+  actualTime        DateTime?
+  status            CheckpointStatus @default(PENDING)
+  deviceId          String?
+  totalStudents     Int      @default(0)
+  recognizedCount   Int      @default(0)
+  unknownCount      Int      @default(0)
+  lowConfidenceCount Int      @default(0)
+  metadata          Json?
+  
+  session           AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  checkpointRecords CheckpointRecord[]
+  
+  @@unique([sessionId, checkpointType])
+  @@index([sessionId])
+  @@index([checkpointType])
+  @@index([status])
+  @@index([scheduledTime])
+  @@map("attendance_checkpoints")
+}
+
+model CheckpointRecord {
+  id                String   @id @default(cuid())
+  checkpointId      String
+  studentId         String
+  tenantId          String
+  recognized        Boolean  @default(false)
+  confidence        Float?
+  faceQuality       Float?
+  recognitionResultId String?
+  exceptionReason   String?
+  metadata          Json?
+  
+  checkpoint        AttendanceCheckpoint @relation(fields: [checkpointId], references: [id], onDelete: Cascade)
+  
+  @@unique([checkpointId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([checkpointId])
+  @@map("checkpoint_records")
+}
+
+model PreliminaryAttendance {
+  id                String   @id @default(cuid())
+  sessionId         String
+  studentId         String
+  tenantId          String
+  status            PreliminaryAttendanceStatus
+  startRecognized   Boolean  @default(false)
+  middleRecognized  Boolean  @default(false)
+  endRecognized    Boolean  @default(false)
+  overallConfidence  Float?
+  exceptionReason   String?
+  needsReview       Boolean  @default(false)
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  finalStatus       String?  // After teacher review
+  notes             String?  // Teacher notes during review
+  isConfirmed       Boolean  @default(false)  // Final confirmation flag
+  confirmedAt       DateTime?
+  confirmedBy       String?
+  metadata          Json?
+  
+  session           AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student           Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  auditTrails       AttendanceAuditTrail[]
+  
+  @@unique([sessionId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([status])
+  @@index([needsReview])
+  @@index([isConfirmed])
+  @@map("preliminary_attendance")
+}
+
+// Phase 9: Teacher Review / Override / Audit Models
+// These models support teacher review of AI-generated attendance with audit trails
+
+model AttendanceAuditTrail {
+  id                String   @id @default(cuid())
+  preliminaryAttendanceId String
+  studentId         String
+  tenantId          String
+  previousStatus    String
+  newStatus         String
+  changeReason      String
+  changedBy         String  // Teacher ID
+  changedAt         DateTime @default(now())
+  changeSource      String
+  notes             String?
+  metadata          Json?
+  
+  preliminaryAttendance PreliminaryAttendance @relation(fields: [preliminaryAttendanceId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([preliminaryAttendanceId])
+  @@index([changedBy])
+  @@index([changedAt])
+  @@map("attendance_audit_trails")
+}
+
+enum BiometricDataStatus {
+  ACTIVE
+  PENDING_DELETION
+  DELETED
+  EXPIRED
+}
